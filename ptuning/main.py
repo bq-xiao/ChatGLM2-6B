@@ -99,7 +99,6 @@ def main():
         'text',
         data_files=data_files,
         cache_dir=model_args.cache_dir,
-        use_auth_token=True if model_args.use_auth_token else None,
     )
 
     # Load pretrained model and tokenizer
