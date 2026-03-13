@@ -138,11 +138,11 @@ def main():
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
     if training_args.do_train:
-        column_names = raw_datasets["train"].column_names
+        logger.info("do_train")
     elif training_args.do_eval:
-        column_names = raw_datasets["validation"].column_names
+        logger.info("do_eval")
     elif training_args.do_predict:
-        column_names = raw_datasets["test"].column_names
+        logger.info("do_predict")
     else:
         logger.info("There is nothing to do. Please pass `do_train`, `do_eval` and/or `do_predict`.")
         return
@@ -154,6 +154,29 @@ def main():
     
     # Temporarily set max_target_length for training.
     max_target_length = data_args.max_target_length
+
+    # 处理原始数据集，转换成格式化后的数据集
+    def prepare_for_dialogue(examples):
+        """对话任务处理"""
+        prompts = []
+        responses = []
+        historys = []
+        for doc in examples['text']:
+            if "NaN" in doc:
+                doc = doc.replace("NaN", "\"？\"")
+            conversations = json.loads(doc)
+            list = []
+            line = []
+            for turn in conversations['conversations']:
+                line.append(turn['value'])
+                if len(line) == 2 and turn['from'] == 'assistant':
+                    list.append(line)
+                    line = []
+            for index, value in enumerate(list):
+                prompts.append(value[0])
+                responses.append(value[1])
+                historys.append(list[:index])
+        return {'prompt': prompts, 'response': responses, 'history': historys}
 
     def preprocess_function_eval(examples):
         inputs, targets = [], []
@@ -227,10 +250,17 @@ def main():
             train_dataset = train_dataset.select(range(max_train_samples))
         with training_args.main_process_first(desc="train dataset map pre-processing"):
             train_dataset = train_dataset.map(
+                prepare_for_dialogue,
+                batched=True,
+                num_proc=data_args.preprocessing_num_workers,
+                remove_columns=train_dataset.column_names,
+                load_from_cache_file=not data_args.overwrite_cache,
+            )
+            train_dataset = train_dataset.map(
                 preprocess_function_train,
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
-                remove_columns=column_names,
+                remove_columns=train_dataset.column_names,
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on train dataset",
             )
@@ -246,10 +276,17 @@ def main():
             eval_dataset = eval_dataset.select(range(max_eval_samples))
         with training_args.main_process_first(desc="validation dataset map pre-processing"):
             eval_dataset = eval_dataset.map(
+                prepare_for_dialogue,
+                batched=True,
+                num_proc=data_args.preprocessing_num_workers,
+                remove_columns=eval_dataset.column_names,
+                load_from_cache_file=not data_args.overwrite_cache,
+            )
+            eval_dataset = eval_dataset.map(
                 preprocess_function_eval,
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
-                remove_columns=column_names,
+                remove_columns=eval_dataset.column_names,
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on validation dataset",
             )
@@ -265,10 +302,17 @@ def main():
             predict_dataset = predict_dataset.select(range(max_predict_samples))
         with training_args.main_process_first(desc="prediction dataset map pre-processing"):
             predict_dataset = predict_dataset.map(
+                prepare_for_dialogue,
+                batched=True,
+                num_proc=data_args.preprocessing_num_workers,
+                remove_columns=predict_dataset.column_names,
+                load_from_cache_file=not data_args.overwrite_cache,
+            )
+            predict_dataset = predict_dataset.map(
                 preprocess_function_eval,
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
-                remove_columns=column_names,
+                remove_columns=predict_dataset.column_names,
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on prediction dataset",
             )
